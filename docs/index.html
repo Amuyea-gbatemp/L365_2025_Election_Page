@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hykoi Votes Viewer</title>
+    <style>
+        body{font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; margin:0; color:#111}
+        header{position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid #eee; padding:10px 12px}
+        .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+        .col{display:flex; flex-direction:column; gap:6px}
+        .box{padding:10px; border:1px solid #eee; border-radius:10px; background:#fafafa}
+        #chart{height:68vh;}
+        footer{padding:10px 12px; border-top:1px solid #eee; color:#555}
+        select, input, button{padding:8px 10px; border-radius:8px; border:1px solid #ddd; background:#fff}
+        button{cursor:pointer}
+        .stack{display:flex; gap:8px; align-items:center}
+        .grow{flex:1}
+        .muted{color:#777}
+        .pill{padding:2px 8px; border-radius:999px; background:#eef; color:#224; font-size:12px}
+        #charFilter{width:220px}
+        #charList{min-width:260px; max-width:520px; height:180px}
+        details summary{cursor:pointer; user-select:none}
+        #heatmap{height:55vh}
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.34.0/plotly.min.js"></script>
+</head>
+<body>
+<header>
+    <div class="row">
+        <div class="col grow">
+            <strong style="font-size:18px">Hykoi Votes Viewer</strong>
+            <span class="muted">Interactive charts from hourly snapshots. Drop this file and CSVs on GitHub Pages.</span>
+            <div class="muted" id="status"></div>
+        </div>
+        <div class="col">
+            <label>Dataset path (folder)</label>
+            <input id="basePath" type="text" value="./out/" />
+        </div>
+        <div class="col">
+            <label>&nbsp;</label>
+            <button id="reload">Load data</button>
+        </div>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+        <div class="col box">
+            <div class="stack">
+                <div class="col">
+                    <label for="metric">Metric</label>
+                    <select id="metric">
+                        <option value="counts">Total votes</option>
+                        <option value="ranks">Rank (lower is better)</option>
+                        <option value="growth">Hourly growth</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label for="charFilter">Filter</label>
+                    <input id="charFilter" type="text" placeholder="type to filter…" />
+                </div>
+                <div class="col">
+                    <label for="charList">Characters</label>
+                    <select id="charList" multiple></select>
+                </div>
+                <div class="col">
+                    <label for="topN">Top-N by total</label>
+                    <div class="stack">
+                        <input id="topN" type="number" min="1" value="10" style="width:90px"/>
+                        <button id="btnTopN">Pick</button>
+                    </div>
+                </div>
+                <div class="col">
+                    <label>&nbsp;</label>
+                    <button id="plot">Plot</button>
+                </div>
+            </div>
+            <div class="muted" style="margin-top:6px">Tip: hold <span class="pill">Ctrl / Cmd</span> to select multiple names.</div>
+        </div>
+        <div class="col box">
+            <div class="stack">
+                <div class="col">
+                    <label>Preset</label>
+                    <div class="stack">
+                        <button id="presetAll">All (chunked)</button>
+                        <input id="chunkSize" type="number" min="5" value="25" style="width:90px"/>
+                    </div>
+                </div>
+                <div class="col">
+                    <label>Export</label>
+                    <button id="dlPNG">Download PNG</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main>
+    <div id="chart"></div>
+
+    <details style="margin:10px 12px">
+        <summary><strong>All-characters heatmap</strong> <span class="pill">growth</span></summary>
+        <div id="heatmap"></div>
+    </details>
+</main>
+
+<footer>
+    Expected files under the base path: <code>counts_timeseries_hourly.csv</code>, <code>ranks_timeseries_hourly.csv</code>, <code>growth_timeseries_hourly.csv</code>, and optional <code>chara_lookup.csv</code>.
+</footer>
+
+<script>
+    const els = {
+      basePath: document.getElementById('basePath'),
+      reload: document.getElementById('reload'),
+      metric: document.getElementById('metric'),
+      charFilter: document.getElementById('charFilter'),
+      charList: document.getElementById('charList'),
+      topN: document.getElementById('topN'),
+      btnTopN: document.getElementById('btnTopN'),
+      plot: document.getElementById('plot'),
+      chart: document.getElementById('chart'),
+      status: document.getElementById('status'),
+      presetAll: document.getElementById('presetAll'),
+      chunkSize: document.getElementById('chunkSize'),
+      dlPNG: document.getElementById('dlPNG'),
+      heatmap: document.getElementById('heatmap'),
+    };
+
+    const state = {
+      counts: null, ranks: null, growth: null, lookup: null,
+      labels: [], // label strings in column order
+      times: [],  // Date objects
+    };
+
+    function info(msg){ els.status.textContent = msg; }
+    function pathJoin(p, f){ if(!p.endsWith('/')) p += '/'; return p + f; }
+
+    async function loadAll(){
+      const base = els.basePath.value.trim() || './out/';
+      info('Loading…');
+      const [counts, ranks, growth, lookup] = await Promise.all([
+        d3.csv(pathJoin(base, 'counts_timeseries_hourly.csv')),
+        d3.csv(pathJoin(base, 'ranks_timeseries_hourly.csv')),
+        d3.csv(pathJoin(base, 'growth_timeseries_hourly.csv')),
+        d3.csv(pathJoin(base, 'chara_lookup.csv')).catch(()=>null),
+      ]);
+      // parse time column name (first column from pandas is 'ts')
+      const timeKey = counts.columns[0];
+      const parseTime = d3.utcParse('%Y-%m-%dT%H:%M:%S%Z');
+      state.times = counts.map(r => new Date(r[timeKey]));
+
+      // columns (labels) are from 2nd onward
+      state.labels = counts.columns.slice(1);
+      state.counts = counts;
+      state.ranks  = ranks;
+      state.growth = growth;
+      state.lookup = lookup;
+      populateList();
+      makeHeatmap();
+      info(`Loaded ${state.labels.length} characters, ${state.times.length} timestamps.`);
+    }
+
+    function populateList(){
+      const sel = els.charList; sel.innerHTML = '';
+      state.labels.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l; opt.textContent = l;
+        sel.appendChild(opt);
+      });
+    }
+
+    // Filter options by text
+    els.charFilter.addEventListener('input', () => {
+      const q = els.charFilter.value.toLowerCase();
+      for(const opt of els.charList.options){
+        opt.hidden = !(opt.textContent.toLowerCase().includes(q));
+      }
+    });
+
+    // Pick Top-N by latest counts
+    els.btnTopN.addEventListener('click', () => {
+      const n = Math.max(1, parseInt(els.topN.value||'10',10));
+      const last = state.counts[state.counts.length - 1];
+      const arr = state.labels.map(lbl => ({ lbl, val: +last[lbl] || 0 }));
+      arr.sort((a,b) => b.val - a.val);
+      const pick = arr.slice(0,n).map(o => o.lbl);
+      selectValues(pick);
+    });
+
+    function selectValues(values){
+      const set = new Set(values);
+      for(const opt of els.charList.options){ opt.selected = set.has(opt.value); }
+    }
+
+    els.plot.addEventListener('click', () => drawChart());
+    els.reload.addEventListener('click', () => loadAll());
+    els.dlPNG.addEventListener('click', async () => {
+      Plotly.downloadImage(els.chart, {format:'png', filename:`hykoi_${els.metric.value}`});
+    });
+
+    // Plotting
+    function drawChart(group=null){
+      const metric = els.metric.value; // counts | ranks | growth
+      const table = state[metric];
+      if(!table){ return; }
+      const picked = group || Array.from(els.charList.selectedOptions).map(o=>o.value);
+      if(picked.length === 0){ info('Pick at least one character.'); return; }
+
+      // build traces
+      const timeKey = table.columns[0];
+      const x = table.map(r => r[timeKey]);
+      const traces = picked.map(lbl => ({
+          type:'scatter', mode:'lines', name: lbl,
+          x, y: table.map(r => {
+            const v = r[lbl];
+            return (v===undefined || v===null || v==='') ? null : +v;
+          }),
+          hovertemplate: '%{x}<br>'+lbl+': %{y}<extra></extra>'
+      }));
+
+      const layout = {
+        margin: {l:60,r:20,t:40,b:60},
+        xaxis: {title: 'Time (UTC)'},
+        yaxis: {title: metric==='counts' ? 'Total votes' : (metric==='ranks' ? 'Rank (lower=better)' : 'Votes gained') , autorange: metric==='ranks' ? 'reversed' : true},
+        legend: {orientation:'h'},
+      };
+      Plotly.newPlot(els.chart, traces, layout, {responsive:true});
+    }
+
+    // All preset (chunked)
+    els.presetAll.addEventListener('click', () => {
+      const chunk = Math.max(5, parseInt(els.chunkSize.value||'25',10));
+      const labels = state.labels.slice();
+      // order by latest total votes
+      const last = state.counts[state.counts.length - 1];
+      labels.sort((a,b)=> (+last[b]||0) - (+last[a]||0));
+      // create first group immediately
+      selectValues(labels.slice(0, chunk));
+      drawChart(labels.slice(0, chunk));
+      // offer quick links for the rest
+      const groups = [];
+      for(let i=chunk;i<labels.length;i+=chunk){ groups.push(labels.slice(i, i+chunk)); }
+      // add buttons below chart
+      let bar = document.getElementById('groupbar');
+      if(!bar){ bar = document.createElement('div'); bar.id='groupbar'; bar.style.padding='8px 12px'; els.chart.after(bar); }
+      bar.innerHTML = '';
+      groups.forEach((g,idx)=>{
+        const btn=document.createElement('button'); btn.textContent = `Group ${idx+2}`; btn.style.marginRight='6px';
+        btn.onclick = ()=>{ selectValues(g); drawChart(g); };
+        bar.appendChild(btn);
+      });
+    });
+
+    function makeHeatmap(){
+      if(!state.growth) return;
+      const tkey = state.growth.columns[0];
+      const times = state.growth.map(r=>r[tkey]);
+      const labels = state.labels;
+      // Build Z matrix (labels x times)
+      const Z = labels.map(lbl => state.growth.map(r => {
+        const v = r[lbl];
+        return (v===undefined||v==='') ? 0 : +v;
+      }));
+      const data = [{
+        type:'heatmap', z: Z, x: times, y: labels, colorbar: {title:'Growth'},
+        hoverongaps: false
+      }];
+      const layout = {margin:{l:160,r:20,t:30,b:60}, xaxis:{title:'Time (UTC)'}, yaxis:{title:'Character'}};
+      Plotly.newPlot(els.heatmap, data, layout, {responsive:true});
+    }
+
+    // Auto-load on start
+    loadAll();
+</script>
+</body>
+</html>
