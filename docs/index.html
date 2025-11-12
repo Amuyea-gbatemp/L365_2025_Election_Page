@@ -1,276 +1,689 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hykoi Votes Viewer</title>
-    <style>
-        body{font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; margin:0; color:#111}
-        header{position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid #eee; padding:10px 12px}
-        .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
-        .col{display:flex; flex-direction:column; gap:6px}
-        .box{padding:10px; border:1px solid #eee; border-radius:10px; background:#fafafa}
-        #chart{height:68vh;}
-        footer{padding:10px 12px; border-top:1px solid #eee; color:#555}
-        select, input, button{padding:8px 10px; border-radius:8px; border:1px solid #ddd; background:#fff}
-        button{cursor:pointer}
-        .stack{display:flex; gap:8px; align-items:center}
-        .grow{flex:1}
-        .muted{color:#777}
-        .pill{padding:2px 8px; border-radius:999px; background:#eef; color:#224; font-size:12px}
-        #charFilter{width:220px}
-        #charList{min-width:260px; max-width:520px; height:180px}
-        details summary{cursor:pointer; user-select:none}
-        #heatmap{height:55vh}
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.34.0/plotly.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hykoi Votes Viewer</title>
+  <style>
+    body{font:14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; margin:0; color:#111}
+    header{position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid #eee; padding:10px 12px}
+    .row{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+    .col{display:flex; flex-direction:column; gap:6px}
+    .box{padding:10px; border:1px solid #eee; border-radius:10px; background:#fafafa}
+    #chart{height:68vh;}
+    footer{padding:10px 12px; border-top:1px solid #eee; color:#555}
+    select, input, button, a{padding:8px 10px; border-radius:8px; border:1px solid #ddd; background:#fff; text-decoration:none; color:inherit}
+    button{cursor:pointer}
+    .stack{display:flex; gap:8px; align-items:center}
+    .grow{flex:1}
+    .muted{color:#777}
+    .pill{padding:2px 8px; border-radius:999px; background:#eef; color:#224; font-size:12px}
+    #charFilter{width:220px}
+    #charList{min-width:260px; max-width:520px; height:180px}
+    details summary{cursor:pointer; user-select:none}
+    #heatmap{height:55vh}
+    .langbar { display:flex; gap:8px; align-items:center; }
+    .langbtn { padding:6px 10px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+    .langbtn.active { background:#2244aa; color:#fff; border-color:#203a8a; }
+    #yearSelect { width:120px; }
+    .title-line { display:flex; gap:8px; align-items:center; }
+    .title-small { font-size:12px; color:#555; margin-left:4px; }
+    .viewToggle { display:flex; gap:8px; align-items:center; }
+    .viewbtn { padding:8px 12px; border-radius:8px; border:1px solid #cfcfcf; background:#f7f7f7; cursor:pointer; }
+    .viewbtn.active { background:#2244aa; color:#fff; border-color:#203a8a; }
+    #finalView { padding:12px; }
+    table { border-collapse:collapse; width:100%; font-size:13px; }
+    th, td { border:1px solid #eee; padding:8px; text-align:left; }
+    th { cursor:pointer; background:#fafafa; position:sticky; top:0; z-index:1; }
+    tr:nth-child(even) td { background:#fbfbfb; }
+    .small-muted { font-size:12px; color:#666; margin-left:8px;}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.34.0/plotly.min.js"></script>
 </head>
 <body>
 <header>
-    <div class="row">
-        <div class="col grow">
-            <strong style="font-size:18px">Hykoi Votes Viewer</strong>
-            <span class="muted">Interactive charts from hourly snapshots. Drop this file and CSVs on GitHub Pages.</span>
-            <div class="muted" id="status"></div>
-        </div>
-        <div class="col">
-            <label>Dataset path (folder)</label>
-            <input id="basePath" type="text" value="../out/" />
-        </div>
-        <div class="col">
-            <label>&nbsp;</label>
-            <button id="reload">Load data</button>
-        </div>
+  <div class="row">
+    <div class="col grow">
+      <div class="title-line">
+        <strong style="font-size:18px">Hykoi Votes Viewer</strong>
+        <span class="title-small muted">Interactive charts & final results</span>
+      </div>
+      <div class="muted" id="status"></div>
     </div>
 
-    <div class="row" style="margin-top:8px">
-        <div class="col box">
-            <div class="stack">
-                <div class="col">
-                    <label for="metric">Metric</label>
-                    <select id="metric">
-                        <option value="counts">Total votes</option>
-                        <option value="ranks">Rank (lower is better)</option>
-                        <option value="growth">Hourly growth</option>
-                    </select>
-                </div>
-                <div class="col">
-                    <label for="charFilter">Filter</label>
-                    <input id="charFilter" type="text" placeholder="type to filter…" />
-                </div>
-                <div class="col">
-                    <label for="charList">Characters</label>
-                    <select id="charList" multiple></select>
-                </div>
-                <div class="col">
-                    <label for="topN">Top-N by total</label>
-                    <div class="stack">
-                        <input id="topN" type="number" min="1" value="10" style="width:90px"/>
-                        <button id="btnTopN">Pick</button>
-                    </div>
-                </div>
-                <div class="col">
-                    <label>&nbsp;</label>
-                    <button id="plot">Plot</button>
-                </div>
-            </div>
-            <div class="muted" style="margin-top:6px">Tip: hold <span class="pill">Ctrl / Cmd</span> to select multiple names.</div>
-        </div>
-        <div class="col box">
-            <div class="stack">
-                <div class="col">
-                    <label>Preset</label>
-                    <div class="stack">
-                        <button id="presetAll">All (chunked)</button>
-                        <input id="chunkSize" type="number" min="5" value="25" style="width:90px"/>
-                    </div>
-                </div>
-                <div class="col">
-                    <label>Export</label>
-                    <button id="dlPNG">Download PNG</button>
-                </div>
-            </div>
-        </div>
+    <div class="col">
+      <label>Dataset root (folder)</label>
+      <input id="basePath" type="text" value="../out/" />
     </div>
+
+    <div class="col">
+      <label>&nbsp;</label>
+      <button id="reload">Load data</button>
+    </div>
+
+    <div class="col box" style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;flex-direction:column;">
+        <label>Language</label>
+        <div class="langbar" style="margin-top:4px;">
+          <button id="langEN" class="langbtn active">EN</button>
+          <button id="langJP" class="langbtn">JP</button>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label>Year</label>
+        <select id="yearSelect"></select>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label>Stage</label>
+        <select id="stage">
+          <option value="primary">primary</option>
+          <option value="prelim">prelim</option>
+        </select>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <label>View</label>
+        <div class="viewToggle">
+          <button id="viewGraphs" class="viewbtn active">Graphs</button>
+          <button id="viewFinal"  class="viewbtn">Final result</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:8px">
+    <div class="col box">
+      <div class="stack">
+        <div class="col">
+          <label for="metric">Metric</label>
+          <select id="metric">
+            <option value="counts">Total votes</option>
+            <option value="ranks">Rank (lower is better)</option>
+            <option value="growth">Hourly growth</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="charFilter">Filter</label>
+          <input id="charFilter" type="text" placeholder="type to filter…" />
+        </div>
+        <div class="col">
+          <label for="charList">Characters</label>
+          <select id="charList" multiple></select>
+        </div>
+        <div class="col">
+          <label for="topN">Top-N by total</label>
+          <div class="stack">
+            <input id="topN" type="number" min="1" value="10" style="width:90px"/>
+            <button id="btnTopN">Pick</button>
+          </div>
+        </div>
+        <div class="col">
+          <label>&nbsp;</label>
+          <button id="plot">Plot</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">Tip: hold <span class="pill">Ctrl / Cmd</span> to select multiple names.</div>
+    </div>
+    <div class="col box">
+      <div class="stack">
+        <div class="col">
+          <label>Preset</label>
+          <div class="stack">
+            <button id="presetAll">All (chunked)</button>
+            <input id="chunkSize" type="number" min="5" value="25" style="width:90px"/>
+          </div>
+        </div>
+        <div class="col">
+          <label>Export</label>
+          <button id="dlPNG">Download PNG</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </header>
 
 <main>
+  <div id="graphsView">
     <div id="chart"></div>
-
     <details style="margin:10px 12px">
-        <summary><strong>All-characters heatmap</strong> <span class="pill">growth</span></summary>
-        <div id="heatmap"></div>
+      <summary><strong>All-characters heatmap</strong> <span class="pill">growth</span></summary>
+      <div id="heatmap"></div>
     </details>
+  </div>
+
+  <div id="finalView" style="display:none;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+      <a id="finalCsvLink" href="#" download>Download final_ranking_latest.csv</a>
+      <span class="small-muted" id="finalMsg"></span>
+    </div>
+    <div id="finalTableWrap" style="overflow:auto; max-height:70vh; border:1px solid #eee; border-radius:8px; padding:8px; background:#fff;">
+      <table id="finalTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
 </main>
 
 <footer>
-    Expected files under the base path: <code>counts_timeseries_hourly.csv</code>, <code>ranks_timeseries_hourly.csv</code>, <code>growth_timeseries_hourly.csv</code>, and optional <code>chara_lookup.csv</code>.
+  Expected files under the selected folder: <code>counts_timeseries_hourly.csv</code>, <code>ranks_timeseries_hourly.csv</code>, <code>growth_timeseries_hourly.csv</code>, and optional <code>chara_lookup.csv</code> / <code>title_lookup.csv</code>.
+  <div class="muted" style="margin-top:6px">Example folder: <code>../out/2025/en/primary/</code></div>
 </footer>
 
 <script>
-    const els = {
-      basePath: document.getElementById('basePath'),
-      reload: document.getElementById('reload'),
-      metric: document.getElementById('metric'),
-      charFilter: document.getElementById('charFilter'),
-      charList: document.getElementById('charList'),
-      topN: document.getElementById('topN'),
-      btnTopN: document.getElementById('btnTopN'),
-      plot: document.getElementById('plot'),
-      chart: document.getElementById('chart'),
-      status: document.getElementById('status'),
-      presetAll: document.getElementById('presetAll'),
-      chunkSize: document.getElementById('chunkSize'),
-      dlPNG: document.getElementById('dlPNG'),
-      heatmap: document.getElementById('heatmap'),
-    };
+  const els = {
+    basePath: document.getElementById('basePath'),
+    reload: document.getElementById('reload'),
+    metric: document.getElementById('metric'),
+    charFilter: document.getElementById('charFilter'),
+    charList: document.getElementById('charList'),
+    topN: document.getElementById('topN'),
+    btnTopN: document.getElementById('btnTopN'),
+    plot: document.getElementById('plot'),
+    chart: document.getElementById('chart'),
+    status: document.getElementById('status'),
+    presetAll: document.getElementById('presetAll'),
+    chunkSize: document.getElementById('chunkSize'),
+    dlPNG: document.getElementById('dlPNG'),
+    heatmap: document.getElementById('heatmap'),
+    langEN: document.getElementById('langEN'),
+    langJP: document.getElementById('langJP'),
+    yearSelect: document.getElementById('yearSelect'),
+    stage: document.getElementById('stage'),
+    viewGraphs: document.getElementById('viewGraphs'),
+    viewFinal: document.getElementById('viewFinal'),
+    graphsView: document.getElementById('graphsView'),
+    finalView: document.getElementById('finalView'),
+    finalTable: document.getElementById('finalTable'),
+    finalTableWrap: document.getElementById('finalTableWrap'),
+    finalCsvLink: document.getElementById('finalCsvLink'),
+    finalMsg: document.getElementById('finalMsg'),
+  };
 
-    const state = {
-      counts: null, ranks: null, growth: null, lookup: null,
-      labels: [], // label strings in column order
-      times: [],  // Date objects
-    };
+  const state = {
+    counts: null, ranks: null, growth: null, lookup: null, titleLookup: null,
+    labels: [], times: [], lang: 'EN'
+  };
 
-    function info(msg){ els.status.textContent = msg; }
-    function pathJoin(p, f){ if(!p.endsWith('/')) p += '/'; return p + f; }
+  function info(msg){ els.status.textContent = msg; }
+  function pathJoin(p, f){ if(!p.endsWith('/')) p += '/'; return p + f; }
+  function normalizePathSegments(...parts){
+    const flat = parts.join('/').split('/').filter(Boolean);
+    return flat.join('/') + '/';
+  }
+  function getDataFolder(){
+    const base = (els.basePath.value || './out/').trim();
+    const year = String(els.yearSelect.value || '2025').trim();
+    const lang = (state.lang || 'EN').toLowerCase();
+    const stage = (els.stage.value || 'primary').trim();
+    return normalizePathSegments(base, year, lang, stage);
+  }
 
-    async function loadAll(){
-      const base = els.basePath.value.trim() || './out/';
-      info('Loading…');
+  async function discoverYears() {
+    const base = (els.basePath.value || './out/').trim();
+    const url = base.endsWith('/') ? base : base + '/';
+    try {
+      const resp = await fetch(url, { method: 'GET' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const text = await resp.text();
+      const hrefRe = /href\s*=\s*"(.*?)"/gi;
+      const years = new Set();
+      let m;
+      while ((m = hrefRe.exec(text)) !== null) {
+        const href = m[1].replace(/\/+$/, '');
+        const seg = href.split('/').filter(Boolean).pop();
+        if (/^\d{4}$/.test(seg)) years.add(seg);
+      }
+      const dirRe = /(^|\s)(\d{4})(\/|\s|$)/g;
+      while ((m = dirRe.exec(text)) !== null) { years.add(m[2]); }
+      const arr = Array.from(years).sort((a,b)=>b-a);
+      if (arr.length) return arr;
+      return null;
+    } catch (err) {
+      console.warn('Year discovery failed:', err);
+      return null;
+    }
+  }
+
+  async function populateYearSelect() {
+    const current = els.yearSelect.value || '2025';
+    els.yearSelect.innerHTML = '';
+    info('Discovering year folders under ' + (els.basePath.value || './out/') + ' ...');
+    const years = await discoverYears();
+    if (years && years.length) {
+      years.forEach(y => {
+        const opt = document.createElement('option');
+        opt.value = y; opt.textContent = y;
+        if (y === current) opt.selected = true;
+        els.yearSelect.appendChild(opt);
+      });
+      info('Found year folders: ' + years.join(', '));
+    } else {
+      const candidates = Array.from(new Set([current, '2025'])).sort().reverse();
+      candidates.forEach(y => {
+        const opt = document.createElement('option');
+        opt.value = y; opt.textContent = y;
+        els.yearSelect.appendChild(opt);
+      });
+      info('Could not auto-discover years (CORS or no directory index). Using default.');
+    }
+  }
+
+  function stripDateSuffix(str){
+    if(!str) return str;
+    return str.replace(/[\s\-\_]*\(?\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(:\d{2})?)?\)?$/,'')
+              .replace(/[\s\-\_]*\(?\d{8}\)?$/,'')
+              .trim();
+  }
+
+  function buildLookupMap(rows){
+    const map = new Map();
+    rows.forEach(r => {
+      const id = (r.id || r.m_vote_chara_id || r.chara_id || r.key || '').toString().trim();
+      const name_en = (r.name_en || r.en || r.chara_name_en || r.chara_name || r.name || '').toString().trim();
+      const name_jp = (r.name_jp || r.jp || r.chara_name_jp || '').toString().trim();
+      const label = (r.label || r.key || '').toString().trim();
+      const item = { ...r, id, name_en, name_jp, label };
+      if(id) map.set(id, item);
+      if(label) map.set(label, item);
+      if(name_en) map.set(name_en, item);
+      if(name_jp) map.set(name_jp, item);
+    });
+    return map;
+  }
+
+  function buildTitleLookup(rows){
+    const map = new Map();
+    if(!rows) return map;
+    rows.forEach(r => {
+      const id = (r.id || r.title_id || r.key || '').toString().trim();
+      const title_en = (r.title_en || r.en || r.name_en || r.name || '').toString().trim();
+      const title_jp = (r.title_jp || r.jp || r.name_jp || '').toString().trim();
+      const item = { ...r, id, title_en, title_jp };
+      if(id) map.set(id, item);
+      if(title_en) map.set(title_en, item);
+      if(title_jp) map.set(title_jp, item);
+    });
+    return map;
+  }
+
+  function lookupForIdOrLabel(key){
+    if(!state.lookup) return null;
+    if(state.lookup.has(key)) return state.lookup.get(key);
+    const stripped = stripDateSuffix(key);
+    if(state.lookup.has(stripped)) return state.lookup.get(stripped);
+    const m = key && key.toString().match(/(\d{2,6})$/);
+    if(m && state.lookup.has(m[1])) return state.lookup.get(m[1]);
+    return null;
+  }
+
+  function lookupTitleForId(key){
+    if(!state.titleLookup) return null;
+    if(state.titleLookup.has(key)) return state.titleLookup.get(key);
+    const stripped = stripDateSuffix(key);
+    if(state.titleLookup.has(stripped)) return state.titleLookup.get(stripped);
+    const m = key && key.toString().match(/(\d{2,6})$/);
+    if(m && state.titleLookup.has(m[1])) return state.titleLookup.get(m[1]);
+    return null;
+  }
+
+  function displayNameForLabel(label){
+    const lkup = lookupForIdOrLabel(label);
+    if(lkup){
+      return state.lang === 'JP' ? (lkup.name_jp || lkup.name_en || label) : (lkup.name_en || lkup.name_jp || label);
+    } else {
+      return stripDateSuffix(label);
+    }
+  }
+
+  function displayTitleForId(titleId){
+    const lkup = lookupTitleForId(titleId);
+    if(lkup){
+      return state.lang === 'JP' ? (lkup.title_jp || lkup.title_en || titleId) : (lkup.title_en || lkup.title_jp || titleId);
+    } else {
+      return String(titleId || '').trim();
+    }
+  }
+
+  async function loadAll(){
+    const folder = getDataFolder();
+    info('Loading from ' + folder + ' …');
+    try {
       const [counts, ranks, growth, lookup] = await Promise.all([
-        d3.csv(pathJoin(base, 'counts_timeseries_hourly.csv')),
-        d3.csv(pathJoin(base, 'ranks_timeseries_hourly.csv')),
-        d3.csv(pathJoin(base, 'growth_timeseries_hourly.csv')),
-        d3.csv(pathJoin(base, 'chara_lookup.csv')).catch(()=>null),
+        d3.csv(pathJoin(folder, 'counts_timeseries_hourly.csv')),
+        d3.csv(pathJoin(folder, 'ranks_timeseries_hourly.csv')).catch(()=>null),
+        d3.csv(pathJoin(folder, 'growth_timeseries_hourly.csv')).catch(()=>null),
+        d3.csv(pathJoin(folder, 'chara_lookup.csv')).catch(()=>null),
       ]);
-      // parse time column name (first column from pandas is 'ts')
+      if(!counts || counts.length === 0) { info('counts_timeseries_hourly.csv missing or empty in ' + folder); return; }
       const timeKey = counts.columns[0];
-      const parseTime = d3.utcParse('%Y-%m-%dT%H:%M:%S%Z');
       state.times = counts.map(r => new Date(r[timeKey]));
-
-      // columns (labels) are from 2nd onward
       state.labels = counts.columns.slice(1);
       state.counts = counts;
       state.ranks  = ranks;
       state.growth = growth;
-      state.lookup = lookup;
+      state.lookup = lookup ? buildLookupMap(lookup) : null;
       populateList();
       makeHeatmap();
-      info(`Loaded ${state.labels.length} characters, ${state.times.length} timestamps.`);
+      info(`Loaded ${state.labels.length} characters, ${state.times.length} timestamps from ${folder}`);
+    } catch (err) {
+      console.error(err);
+      info('Error loading CSVs — check console and path. Tried folder: ' + getDataFolder());
     }
+  }
 
-    function populateList(){
-      const sel = els.charList; sel.innerHTML = '';
-      state.labels.forEach(l => {
-        const opt = document.createElement('option');
-        opt.value = l; opt.textContent = l;
-        sel.appendChild(opt);
-      });
+  function populateList(){
+    const sel = els.charList; sel.innerHTML = '';
+    state.labels.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l;
+      opt.textContent = displayNameForLabel(l);
+      sel.appendChild(opt);
+    });
+  }
+
+  function refreshNamesAndLegend(updatePlot=false){
+    for(const opt of els.charList.options){
+      opt.textContent = displayNameForLabel(opt.value);
     }
-
-    // Filter options by text
-    els.charFilter.addEventListener('input', () => {
-      const q = els.charFilter.value.toLowerCase();
-      for(const opt of els.charList.options){
-        opt.hidden = !(opt.textContent.toLowerCase().includes(q));
-      }
-    });
-
-    // Pick Top-N by latest counts
-    els.btnTopN.addEventListener('click', () => {
-      const n = Math.max(1, parseInt(els.topN.value||'10',10));
-      const last = state.counts[state.counts.length - 1];
-      const arr = state.labels.map(lbl => ({ lbl, val: +last[lbl] || 0 }));
-      arr.sort((a,b) => b.val - a.val);
-      const pick = arr.slice(0,n).map(o => o.lbl);
-      selectValues(pick);
-    });
-
-    function selectValues(values){
-      const set = new Set(values);
-      for(const opt of els.charList.options){ opt.selected = set.has(opt.value); }
+    if(updatePlot){
+      const picked = Array.from(els.charList.selectedOptions).map(o=>o.value);
+      if(picked.length) drawChart(picked);
     }
+  }
 
-    els.plot.addEventListener('click', () => drawChart());
-    els.reload.addEventListener('click', () => loadAll());
-    els.dlPNG.addEventListener('click', async () => {
-      Plotly.downloadImage(els.chart, {format:'png', filename:`hykoi_${els.metric.value}`});
-    });
+  function setLang(l){
+    state.lang = l;
+    els.langEN.classList.toggle('active', l === 'EN');
+    els.langJP.classList.toggle('active', l === 'JP');
+    refreshNamesAndLegend(true);
+  }
+  els.langEN.addEventListener('click', ()=> setLang('EN'));
+  els.langJP.addEventListener('click', ()=> setLang('JP'));
 
-    // Plotting
-    function drawChart(group=null){
-      const metric = els.metric.value; // counts | ranks | growth
-      const table = state[metric];
-      if(!table){ return; }
-      const picked = group || Array.from(els.charList.selectedOptions).map(o=>o.value);
-      if(picked.length === 0){ info('Pick at least one character.'); return; }
+  els.charFilter.addEventListener('input', () => {
+    const q = els.charFilter.value.toLowerCase();
+    for(const opt of els.charList.options){
+      opt.hidden = !(opt.textContent.toLowerCase().includes(q));
+    }
+  });
 
-      // build traces
-      const timeKey = table.columns[0];
-      const x = table.map(r => r[timeKey]);
-      const traces = picked.map(lbl => ({
-          type:'scatter', mode:'lines', name: lbl,
-          x, y: table.map(r => {
-            const v = r[lbl];
-            return (v===undefined || v===null || v==='') ? null : +v;
-          }),
-          hovertemplate: '%{x}<br>'+lbl+': %{y}<extra></extra>'
-      }));
+  els.btnTopN.addEventListener('click', () => {
+    if(!state.counts) return;
+    const n = Math.max(1, parseInt(els.topN.value||'10',10));
+    const last = state.counts[state.counts.length - 1];
+    const arr = state.labels.map(lbl => ({ lbl, val: +last[lbl] || 0 }));
+    arr.sort((a,b) => b.val - a.val);
+    const pick = arr.slice(0,n).map(o => o.lbl);
+    selectValues(pick);
+    drawChart(pick);
+  });
 
-      const layout = {
-        margin: {l:60,r:20,t:40,b:60},
-        xaxis: {title: 'Time (UTC)'},
-        yaxis: {title: metric==='counts' ? 'Total votes' : (metric==='ranks' ? 'Rank (lower=better)' : 'Votes gained') , autorange: metric==='ranks' ? 'reversed' : true},
-        legend: {orientation:'h'},
+  function selectValues(values){
+    const set = new Set(values);
+    for(const opt of els.charList.options){ opt.selected = set.has(opt.value); }
+  }
+
+  els.plot.addEventListener('click', () => {
+    const picked = Array.from(els.charList.selectedOptions).map(o=>o.value);
+    drawChart(picked);
+  });
+
+  els.reload.addEventListener('click', async () => {
+    await populateYearSelect();
+    if(isGraphsView()) await loadAll();
+    if(isFinalView()) await loadFinalResult();
+  });
+
+  els.dlPNG.addEventListener('click', async () => {
+    Plotly.downloadImage(els.chart, {format:'png', filename:`hykoi_${els.metric.value}_${state.lang}_${els.yearSelect.value||'2025'}_${els.stage.value}`});
+  });
+
+  function drawChart(group=null){
+    const metric = els.metric.value;
+    const table = state[metric];
+    if(!table){ info('Metric table missing'); return; }
+    const picked = group || Array.from(els.charList.selectedOptions).map(o=>o.value);
+    if(picked.length === 0){ info('Pick at least one character.'); return; }
+    const timeKey = table.columns[0];
+    const x = table.map(r => r[timeKey]);
+    const traces = picked.map(lbl => {
+      const display = displayNameForLabel(lbl);
+      return {
+        type:'scatter', mode:'lines', name: display,
+        x, y: table.map(r => {
+          const v = r[lbl];
+          return (v===undefined || v===null || v==='') ? null : +v;
+        }),
+        hovertemplate: '%{x}<br>'+display+': %{y}<extra></extra>'
       };
-      Plotly.newPlot(els.chart, traces, layout, {responsive:true});
-    }
-
-    // All preset (chunked)
-    els.presetAll.addEventListener('click', () => {
-      const chunk = Math.max(5, parseInt(els.chunkSize.value||'25',10));
-      const labels = state.labels.slice();
-      // order by latest total votes
-      const last = state.counts[state.counts.length - 1];
-      labels.sort((a,b)=> (+last[b]||0) - (+last[a]||0));
-      // create first group immediately
-      selectValues(labels.slice(0, chunk));
-      drawChart(labels.slice(0, chunk));
-      // offer quick links for the rest
-      const groups = [];
-      for(let i=chunk;i<labels.length;i+=chunk){ groups.push(labels.slice(i, i+chunk)); }
-      // add buttons below chart
-      let bar = document.getElementById('groupbar');
-      if(!bar){ bar = document.createElement('div'); bar.id='groupbar'; bar.style.padding='8px 12px'; els.chart.after(bar); }
-      bar.innerHTML = '';
-      groups.forEach((g,idx)=>{
-        const btn=document.createElement('button'); btn.textContent = `Group ${idx+2}`; btn.style.marginRight='6px';
-        btn.onclick = ()=>{ selectValues(g); drawChart(g); };
-        bar.appendChild(btn);
-      });
     });
+    const layout = {
+      margin: {l:60,r:20,t:40,b:60},
+      xaxis: {title: 'Time (UTC)'},
+      yaxis: {title: metric==='counts' ? 'Total votes' : (metric==='ranks' ? 'Rank (lower=better)' : 'Votes gained') , autorange: metric==='ranks' ? 'reversed' : true},
+      legend: {orientation:'h'},
+    };
+    Plotly.newPlot(els.chart, traces, layout, {responsive:true});
+    info(`${picked.length} series plotted — ${state.lang} / ${els.yearSelect.value || '2025'} / ${els.stage.value}`);
+  }
 
-    function makeHeatmap(){
-      if(!state.growth) return;
-      const tkey = state.growth.columns[0];
-      const times = state.growth.map(r=>r[tkey]);
-      const labels = state.labels;
-      // Build Z matrix (labels x times)
-      const Z = labels.map(lbl => state.growth.map(r => {
-        const v = r[lbl];
-        return (v===undefined||v==='') ? 0 : +v;
-      }));
-      const data = [{
-        type:'heatmap', z: Z, x: times, y: labels, colorbar: {title:'Growth'},
-        hoverongaps: false
-      }];
-      const layout = {margin:{l:160,r:20,t:30,b:60}, xaxis:{title:'Time (UTC)'}, yaxis:{title:'Character'}};
-      Plotly.newPlot(els.heatmap, data, layout, {responsive:true});
+  els.presetAll.addEventListener('click', () => {
+    if(!state.counts) return;
+    const chunk = Math.max(5, parseInt(els.chunkSize.value||'25',10));
+    const labels = state.labels.slice();
+    const last = state.counts[state.counts.length - 1];
+    labels.sort((a,b)=> (+last[b]||0) - (+last[a]||0));
+    selectValues(labels.slice(0, chunk));
+    drawChart(labels.slice(0, chunk));
+    const groups = [];
+    for(let i=chunk;i<labels.length;i+=chunk){ groups.push(labels.slice(i, i+chunk)); }
+    let bar = document.getElementById('groupbar');
+    if(!bar){ bar = document.createElement('div'); bar.id='groupbar'; bar.style.padding='8px 12px'; els.chart.after(bar); }
+    bar.innerHTML = '';
+    groups.forEach((g,idx)=>{
+      const btn=document.createElement('button'); btn.textContent = `Group ${idx+2}`; btn.style.marginRight='6px';
+      btn.onclick = ()=>{ selectValues(g); drawChart(g); };
+      bar.appendChild(btn);
+    });
+  });
+
+  function makeHeatmap(){
+    if(!state.growth) return;
+    const tkey = state.growth.columns[0];
+    const times = state.growth.map(r=>r[tkey]);
+    const labels = state.labels;
+    const Z = labels.map(lbl => state.growth.map(r => {
+      const v = r[lbl];
+      return (v===undefined||v==='') ? 0 : +v;
+    }));
+    const data = [{
+      type:'heatmap', z: Z, x: times, y: labels.map(l => displayNameForLabel(l)), colorbar: {title:'Growth'},
+      hoverongaps: false
+    }];
+    const layout = {margin:{l:260,r:20,t:30,b:60}, xaxis:{title:'Time (UTC)'}, yaxis:{title:'Character'}};
+    Plotly.newPlot(els.heatmap, data, layout, {responsive:true});
+  }
+
+  // ---------------- Final result loader (updated) ----------------
+  async function loadFinalResult(){
+    const folder = getDataFolder();
+    const csvPath = pathJoin(folder, 'final_ranking_latest.csv');
+    info('Loading final result: ' + csvPath);
+    try {
+      const [rows, lookupRows, titleRows] = await Promise.all([
+        d3.csv(csvPath).catch(()=>null),
+        d3.csv(pathJoin(folder, 'chara_lookup.csv')).catch(()=>null),
+        d3.csv(pathJoin(folder, 'title_lookup.csv')).catch(()=>null),
+      ]);
+
+      if(!rows || rows.length === 0){
+        els.finalMsg.textContent = 'final_ranking_latest.csv not found or empty in ' + folder;
+        els.finalCsvLink.style.display = 'none';
+        els.finalTable.querySelector('thead').innerHTML = '';
+        els.finalTable.querySelector('tbody').innerHTML = '';
+        info('No final CSV found in ' + folder);
+        return;
+      }
+
+      // build lookups
+      if(lookupRows) state.lookup = buildLookupMap(lookupRows);
+      state.titleLookup = titleRows ? buildTitleLookup(titleRows) : null;
+
+      els.finalMsg.textContent = `${rows.length} rows`;
+      els.finalCsvLink.href = csvPath;
+      els.finalCsvLink.style.display = 'inline-block';
+
+      // Transform rows to desired columns: rank, name (localized), title_id, title, votes (summary_total_count)
+      const transformed = rows.map(r => {
+        // find an id/key for character
+        const idkeys = ['m_vote_chara_id','id','chara_id','key'];
+        let id = null;
+        for(const k of idkeys){ if(r[k] && r[k].toString().trim() !== '') { id = r[k].toString().trim(); break; } }
+        if(!id){
+          for(const k of Object.keys(r)){
+            if(/id$/i.test(k) && r[k]) { id = r[k].toString().trim(); break; }
+          }
+        }
+
+        // rank
+        let rank = null;
+        for(const k of ['rank','順位','final_rank','no']){ if(r[k]!==undefined){ rank = r[k]; break; } }
+        if(rank==null){
+          for(const k of Object.keys(r)){
+            if(/rank|順位|pos|position/i.test(k)){ rank = r[k]; break; }
+          }
+        }
+
+        // votes: prefer summary_total_count
+        let votes = null;
+        if(r.summary_total_count !== undefined && r.summary_total_count !== '') votes = r.summary_total_count;
+        else {
+          // fallback heuristics: column name containing vote/票/count/total/summary_total_count
+          for(const k of Object.keys(r)){
+            if(/summary_total_count|vote|票|count|total|point|score/i.test(k)){ votes = r[k]; break; }
+          }
+        }
+        // numeric fallback: choose the largest numeric-looking column if still missing
+        if(votes==null){
+          const numericFields = [];
+          for(const k of Object.keys(r)){
+            const raw = (r[k] || '').toString().replace(/,/g,'').trim();
+            if(raw!=='' && !isNaN(parseFloat(raw))) numericFields.push({k, n: parseFloat(raw)});
+          }
+          if(numericFields.length){
+            numericFields.sort((a,b)=>b.n - a.n);
+            votes = r[numericFields[0].k];
+          }
+        }
+
+        // title id: look for common column names
+        let title_id = null;
+        for(const k of ['title_id','m_title_id','title','titleKey']){ if(r[k]!==undefined && r[k].toString().trim()!==''){ title_id = r[k].toString().trim(); break; } }
+        if(!title_id){
+          for(const k of Object.keys(r)){
+            if(/title/i.test(k) && r[k] && r[k].toString().trim() !== '' && !/title_name|title_en|title_jp/i.test(k)){
+              title_id = r[k].toString().trim(); break;
+            }
+          }
+        }
+
+        // Determine display name via lookup
+        let name = null;
+        if(id) {
+          const lkup = lookupForIdOrLabel(id);
+          if(lkup) name = (state.lang === 'JP' ? (lkup.name_jp || lkup.name_en) : (lkup.name_en || lkup.name_jp));
+        }
+        if(!name){
+          for(const k of ['name','chara_name','name_en','name_jp','label']){ if(r[k]){ name = r[k]; break; } }
+        }
+        if(!name && id) name = id;
+        name = stripDateSuffix(String(name || ''));
+
+        // title display via title lookup
+        const titleDisplay = displayTitleForId(title_id);
+
+        return { rank: rank ?? '', name: name, title_id: title_id ?? '', title: titleDisplay, votes: (votes ?? '') , raw: r };
+      });
+
+      populateFinalTableWithTitle(transformed);
+      info('Loaded final ranking CSV from ' + folder);
+    } catch (err) {
+      console.error(err);
+      els.finalMsg.textContent = 'Error loading final CSV (see console)';
+      els.finalCsvLink.style.display = 'none';
+      els.finalTable.querySelector('thead').innerHTML = '';
+      els.finalTable.querySelector('tbody').innerHTML = '';
+      info('Could not load final CSV — check console and path: ' + csvPath);
     }
+  }
 
-    // Auto-load on start
-    loadAll();
+  // Populate final table: Rank, Name, Title ID, Title, Votes
+  let finalSort = { key: 'rank', asc: true };
+  function populateFinalTableWithTitle(rows){
+    const thead = els.finalTable.querySelector('thead');
+    const tbody = els.finalTable.querySelector('tbody');
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+
+    const headers = ['Rank','Name','Title ID','Title','Votes'];
+    const trh = document.createElement('tr');
+    headers.forEach(h => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      th.dataset.key = h.toLowerCase().replace(/\s+/g,'_');
+      th.addEventListener('click', ()=> sortFinalTableBy(th.dataset.key));
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+
+    rows.forEach(r => {
+      const tr = document.createElement('tr');
+      const tdRank = document.createElement('td'); tdRank.textContent = r.rank ?? ''; tr.appendChild(tdRank);
+      const tdName = document.createElement('td'); tdName.textContent = r.name ?? ''; tr.appendChild(tdName);
+      const tdTitleId = document.createElement('td'); tdTitleId.textContent = r.title_id ?? ''; tr.appendChild(tdTitleId);
+      const tdTitle = document.createElement('td'); tdTitle.textContent = r.title ?? ''; tr.appendChild(tdTitle);
+      const tdVotes = document.createElement('td'); tdVotes.textContent = r.votes ?? ''; tr.appendChild(tdVotes);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function sortFinalTableBy(key){
+    const tbody = els.finalTable.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    if(finalSort.key === key) finalSort.asc = !finalSort.asc;
+    else { finalSort.key = key; finalSort.asc = true; }
+    const idxMap = { 'rank':0, 'name':1, 'title_id':2, 'title':3, 'votes':4 };
+    const idx = idxMap[key] ?? 0;
+    rows.sort((a,b)=>{
+      const A = a.children[idx].textContent.trim();
+      const B = b.children[idx].textContent.trim();
+      const nA = parseFloat(A.replace(/,/g,'')); const nB = parseFloat(B.replace(/,/g,''));
+      if(!isNaN(nA) && !isNaN(nB)) return finalSort.asc ? nA-nB : nB-nA;
+      return finalSort.asc ? A.localeCompare(B) : B.localeCompare(A);
+    });
+    tbody.innerHTML = '';
+    rows.forEach(r => tbody.appendChild(r));
+  }
+
+  // view toggle handlers
+  function setView(view){
+    const graphs = view === 'graphs';
+    els.viewGraphs.classList.toggle('active', graphs);
+    els.viewFinal.classList.toggle('active', !graphs);
+    els.graphsView.style.display = graphs ? '' : 'none';
+    els.finalView.style.display = graphs ? 'none' : '';
+    if(!graphs) loadFinalResult();
+    else loadAll();
+  }
+  function isGraphsView(){ return els.viewGraphs.classList.contains('active'); }
+  function isFinalView(){ return els.viewFinal.classList.contains('active'); }
+  els.viewGraphs.addEventListener('click', ()=> setView('graphs'));
+  els.viewFinal.addEventListener('click', ()=> setView('final'));
+
+  (async function init(){
+    await populateYearSelect();
+    await loadAll();
+  })();
+
+  els.basePath.addEventListener('change', async ()=> { await populateYearSelect(); });
 </script>
 </body>
 </html>
