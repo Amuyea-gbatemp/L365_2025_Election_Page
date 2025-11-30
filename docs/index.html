@@ -273,14 +273,15 @@
               .trim();
   }
 
+  // build lookup: expects chara_lookup.csv where `name` is JP and `name_en` is English
   function buildLookupMap(rows){
     const map = new Map();
     rows.forEach(r => {
       const id = (r.id || r.m_vote_chara_id || r.chara_id || r.key || '').toString().trim();
-      const name_en = (r.name_en || r.en || r.chara_name_en || r.chara_name || r.name || '').toString().trim();
-      const name_jp = (r.name_jp || r.jp || r.chara_name_jp || '').toString().trim();
+      const name_jp = (r.name || r.name_jp || r.chara_name || r.chara_name_jp || '').toString().trim();
+      const name_en = (r.name_en || r.en || r.chara_name_en || '').toString().trim();
       const label = (r.label || r.key || '').toString().trim();
-      const item = { ...r, id, name_en, name_jp, label };
+      const item = Object.assign({}, r, { id, name_jp, name_en, label });
       if(id) map.set(id, item);
       if(label) map.set(label, item);
       if(name_en) map.set(name_en, item);
@@ -293,10 +294,10 @@
     const map = new Map();
     if(!rows) return map;
     rows.forEach(r => {
-      const id = (r.id || r.title_id || r.key || '').toString().trim();
-      const title_en = (r.title_en || r.en || r.name_en || r.name || '').toString().trim();
+      const id = (r.id || r.m_vote_title_id || r.m_vote_id || r.key || '').toString().trim();
+      const title_en = (r.vote_title_name || r.title_en || r.en || r.name_en || r.name || '').toString().trim();
       const title_jp = (r.title_jp || r.jp || r.name_jp || '').toString().trim();
-      const item = { ...r, id, title_en, title_jp };
+      const item = Object.assign({}, r, { id, title_en, title_jp });
       if(id) map.set(id, item);
       if(title_en) map.set(title_en, item);
       if(title_jp) map.set(title_jp, item);
@@ -327,7 +328,13 @@
   function displayNameForLabel(label){
     const lkup = lookupForIdOrLabel(label);
     if(lkup){
-      return state.lang === 'JP' ? (lkup.name_jp || lkup.name_en || label) : (lkup.name_en || lkup.name_jp || label);
+      if(state.lang === 'JP'){
+        const jp = lkup.name_jp || lkup.name_en || label;
+        const en = lkup.name_en || '';
+        return en ? `${jp} / ${en}` : jp;
+      } else {
+        return lkup.name_en || lkup.name_jp || label;
+      }
     } else {
       return stripDateSuffix(label);
     }
@@ -556,12 +563,10 @@
         let votes = null;
         if(r.summary_total_count !== undefined && r.summary_total_count !== '') votes = r.summary_total_count;
         else {
-          // fallback heuristics: column name containing vote/票/count/total/summary_total_count
           for(const k of Object.keys(r)){
             if(/summary_total_count|vote|票|count|total|point|score/i.test(k)){ votes = r[k]; break; }
           }
         }
-        // numeric fallback: choose the largest numeric-looking column if still missing
         if(votes==null){
           const numericFields = [];
           for(const k of Object.keys(r)){
@@ -585,11 +590,19 @@
           }
         }
 
-        // Determine display name via lookup
+        // Determine display name via lookup (use combined JP / EN for JP view)
         let name = null;
         if(id) {
           const lkup = lookupForIdOrLabel(id);
-          if(lkup) name = (state.lang === 'JP' ? (lkup.name_jp || lkup.name_en) : (lkup.name_en || lkup.name_jp));
+          if(lkup){
+            if(state.lang === 'JP'){
+              const jp = lkup.name_jp || lkup.name_en || '';
+              const en = lkup.name_en || '';
+              name = en ? `${jp || en} / ${en}` : (jp || en);
+            } else {
+              name = lkup.name_en || lkup.name_jp || '';
+            }
+          }
         }
         if(!name){
           for(const k of ['name','chara_name','name_en','name_jp','label']){ if(r[k]){ name = r[k]; break; } }
