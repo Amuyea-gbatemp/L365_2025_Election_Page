@@ -280,7 +280,7 @@
       const id = (r.id || r.m_vote_chara_id || r.chara_id || r.key || '').toString().trim();
       const name_jp = (r.name || r.name_jp || r.chara_name || r.chara_name_jp || '').toString().trim();
       const name_en = (r.name_en || r.en || r.chara_name_en || '').toString().trim();
-      const label = (r.label || r.key || '').toString().trim();
+      const label = (r.label || r.key || r.name || '').toString().trim();
       const item = Object.assign({}, r, { id, name_jp, name_en, label });
       if(id) map.set(id, item);
       if(label) map.set(label, item);
@@ -293,15 +293,18 @@
   function buildTitleLookup(rows){
     const map = new Map();
     if(!rows) return map;
+
     rows.forEach(r => {
       const id = (r.id || r.m_vote_title_id || r.m_vote_id || r.key || '').toString().trim();
-      const title_en = (r.vote_title_name || r.title_en || r.en || r.name_en || r.name || '').toString().trim();
-      const title_jp = (r.title_jp || r.jp || r.name_jp || '').toString().trim();
+      const title_jp = (r.vote_title_name || r.title_jp || r.jp || r.name_jp || '').toString().trim();
+      const title_en = (r.vote_title_name_en || r.title_en || r.en || r.name_en || '').toString().trim();
       const item = Object.assign({}, r, { id, title_en, title_jp });
+
       if(id) map.set(id, item);
       if(title_en) map.set(title_en, item);
       if(title_jp) map.set(title_jp, item);
     });
+
     return map;
   }
 
@@ -342,10 +345,19 @@
 
   function displayTitleForId(titleId){
     const lkup = lookupTitleForId(titleId);
-    if(lkup){
-      return state.lang === 'JP' ? (lkup.title_jp || lkup.title_en || titleId) : (lkup.title_en || lkup.title_jp || titleId);
-    } else {
+    if (!lkup) {
       return String(titleId || '').trim();
+    }
+
+    const jp = lkup.title_jp || lkup.title_en || String(titleId || '').trim();
+    const en = lkup.title_en || '';
+
+    if (state.lang === 'JP') {
+      // JP view: "JP / EN" if EN exists
+      return en ? `${jp} / ${en}` : jp;
+    } else {
+      // EN view: prefer EN, fall back to JP or ID
+      return en || jp || String(titleId || '').trim();
     }
   }
 
@@ -443,35 +455,69 @@
     Plotly.downloadImage(els.chart, {format:'png', filename:`hykoi_${els.metric.value}_${state.lang}_${els.yearSelect.value||'2025'}_${els.stage.value}`});
   });
 
-  function drawChart(group=null){
+  function drawChart(group = null){
     const metric = els.metric.value;
     const table = state[metric];
-    if(!table){ info('Metric table missing'); return; }
-    const picked = group || Array.from(els.charList.selectedOptions).map(o=>o.value);
-    if(picked.length === 0){ info('Pick at least one character.'); return; }
+    if (!table) {
+      info('Metric table missing');
+      return;
+    }
+
+    const picked = group || Array.from(els.charList.selectedOptions).map(o => o.value);
+    if (picked.length === 0) {
+      info('Pick at least one character.');
+      return;
+    }
+
+    const many = picked.length > 60; // if tons of lines, hide markers
     const timeKey = table.columns[0];
     const x = table.map(r => r[timeKey]);
+
     const traces = picked.map(lbl => {
       const display = displayNameForLabel(lbl);
+      const y = table.map(r => {
+        const v = r[lbl];
+        return (v === undefined || v === null || v === '') ? null : +v;
+      });
+
       return {
-        type:'scatter', mode:'lines', name: display,
-        x, y: table.map(r => {
-          const v = r[lbl];
-          return (v===undefined || v===null || v==='') ? null : +v;
-        }),
-        hovertemplate: '%{x}<br>'+display+': %{y}<extra></extra>'
+        type: 'scatter',
+        mode: 'lines',
+        name: display,
+        x: x,
+        y: y,
+        hovertemplate: '%{x}<br>' + display + ': %{y}<extra></extra>',
+        hoverlabel: { namelength: -1 }
       };
     });
+
     const layout = {
-      margin: {l:60,r:20,t:40,b:60},
-      xaxis: {title: 'Time (UTC)'},
-      yaxis: {title: metric==='counts' ? 'Total votes' : (metric==='ranks' ? 'Rank (lower=better)' : 'Votes gained') , autorange: metric==='ranks' ? 'reversed' : true},
-      legend: {orientation:'h'},
+      margin: { l: 70, r: 20, t: 40, b: 60 },
+      xaxis: { title: 'Time (UTC)' },
+      yaxis: {
+        title: metric === 'counts'
+          ? 'Total votes'
+          : (metric === 'ranks' ? 'Rank (lower=better)' : 'Votes gained'),
+        autorange: metric === 'ranks' ? 'reversed' : true
+      },
+      legend: {
+        orientation: 'h',
+        itemclick: 'toggle',
+        itemdoubleclick: 'toggleothers',
+        traceorder: 'normal',
+        xanchor: 'center',
+        x: 0.5
+      },
+      showlegend: picked.length <= 200
     };
-    Plotly.newPlot(els.chart, traces, layout, {responsive:true});
+
+    const config = { responsive: true, displayModeBar: true, scrollZoom: true };
+
+    Plotly.react(els.chart, traces, layout, config);
     info(`${picked.length} series plotted — ${state.lang} / ${els.yearSelect.value || '2025'} / ${els.stage.value}`);
   }
 
+  // preset / chunking UI
   els.presetAll.addEventListener('click', () => {
     if(!state.counts) return;
     const chunk = Math.max(5, parseInt(els.chunkSize.value||'25',10));
@@ -533,33 +579,20 @@
       // build lookups
       if(lookupRows) state.lookup = buildLookupMap(lookupRows);
       state.titleLookup = titleRows ? buildTitleLookup(titleRows) : null;
-
       els.finalMsg.textContent = `${rows.length} rows`;
       els.finalCsvLink.href = csvPath;
       els.finalCsvLink.style.display = 'inline-block';
 
-      // Transform rows to desired columns: rank, name (localized), title_id, title, votes (summary_total_count)
+      // Transform rows to desired columns: rank, name (localized), title, votes (summary_total_count)
       const transformed = rows.map(r => {
-        // find an id/key for character
-        const idkeys = ['m_vote_chara_id','id','chara_id','key'];
         let id = null;
-        for(const k of idkeys){ if(r[k] && r[k].toString().trim() !== '') { id = r[k].toString().trim(); break; } }
-        if(!id){
-          for(const k of Object.keys(r)){
-            if(/id$/i.test(k) && r[k]) { id = r[k].toString().trim(); break; }
-          }
-        }
-
         // rank
+        for(const k of ['m_vote_chara_id','id','chara_id','key']){ if(r[k] && r[k].toString().trim() !== '') { id = r[k].toString().trim(); break; } }
+        if(!id){ for(const k of Object.keys(r)){ if(/id$/i.test(k) && r[k]) { id = r[k].toString().trim(); break; } } }
         let rank = null;
         for(const k of ['rank','順位','final_rank','no']){ if(r[k]!==undefined){ rank = r[k]; break; } }
-        if(rank==null){
-          for(const k of Object.keys(r)){
-            if(/rank|順位|pos|position/i.test(k)){ rank = r[k]; break; }
-          }
-        }
-
         // votes: prefer summary_total_count
+        if(rank==null){ for(const k of Object.keys(r)){ if(/rank|順位|pos|position/i.test(k)){ rank = r[k]; break; } } }
         let votes = null;
         if(r.summary_total_count !== undefined && r.summary_total_count !== '') votes = r.summary_total_count;
         else {
@@ -612,7 +645,6 @@
 
         // title display via title lookup
         const titleDisplay = displayTitleForId(title_id);
-
         return { rank: rank ?? '', name: name, title_id: title_id ?? '', title: titleDisplay, votes: (votes ?? '') , raw: r };
       });
 
@@ -628,6 +660,16 @@
     }
   }
 
+function formatNumberCell(v){
+  if (v === undefined || v === null || v === '') return '';
+  const s = String(v).replace(/,/g, '').trim();
+  if (!s) return '';
+  const n = Number(s);
+  if (!Number.isFinite(n)) return String(v);
+  // You can change 'en-US' if you want different separators
+  return n.toLocaleString('en-US');
+}
+
   // Populate final table: Rank, Name, Title ID, Title, Votes
   let finalSort = { key: 'rank', asc: true };
   function populateFinalTableWithTitle(rows){
@@ -635,8 +677,7 @@
     const tbody = els.finalTable.querySelector('tbody');
     thead.innerHTML = '';
     tbody.innerHTML = '';
-
-    const headers = ['Rank','Name','Title ID','Title','Votes'];
+    const headers = ['Rank','Name','Title','Votes'];
     const trh = document.createElement('tr');
     headers.forEach(h => {
       const th = document.createElement('th');
@@ -646,14 +687,12 @@
       trh.appendChild(th);
     });
     thead.appendChild(trh);
-
     rows.forEach(r => {
       const tr = document.createElement('tr');
-      const tdRank = document.createElement('td'); tdRank.textContent = r.rank ?? ''; tr.appendChild(tdRank);
-      const tdName = document.createElement('td'); tdName.textContent = r.name ?? ''; tr.appendChild(tdName);
-      const tdTitleId = document.createElement('td'); tdTitleId.textContent = r.title_id ?? ''; tr.appendChild(tdTitleId);
-      const tdTitle = document.createElement('td'); tdTitle.textContent = r.title ?? ''; tr.appendChild(tdTitle);
-      const tdVotes = document.createElement('td'); tdVotes.textContent = r.votes ?? ''; tr.appendChild(tdVotes);
+      tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.rank ?? '' }));
+      tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.name ?? '' }));
+      tr.appendChild(Object.assign(document.createElement('td'), { textContent: r.title ?? '' }));
+      tr.appendChild(Object.assign(document.createElement('td'), { textContent: formatNumberCell(r.votes)}));
       tbody.appendChild(tr);
     });
   }
@@ -663,7 +702,7 @@
     const rows = Array.from(tbody.querySelectorAll('tr'));
     if(finalSort.key === key) finalSort.asc = !finalSort.asc;
     else { finalSort.key = key; finalSort.asc = true; }
-    const idxMap = { 'rank':0, 'name':1, 'title_id':2, 'title':3, 'votes':4 };
+    const idxMap = { 'rank':0, 'name':1, 'title':2, 'votes':3 };
     const idx = idxMap[key] ?? 0;
     rows.sort((a,b)=>{
       const A = a.children[idx].textContent.trim();
